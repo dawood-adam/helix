@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "helix"
+version = "0.0.1"
+description = "Helix — research co-pilot + knowledge atlas (Forge runtime + Atlas knowledge layer)"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml>=6.0",
+    "click>=8",
+    "langgraph>=1,<2",
+    "langgraph-checkpoint-sqlite>=2",
+]
+
+[project.scripts]
+helix = "helix.cli:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
