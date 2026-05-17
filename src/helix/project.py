@@ -85,7 +85,12 @@ class ProjectStore:
         return self.layout.project_dir(name) / self.META
 
     def exists(self, name: str) -> bool:
-        return self._meta_path(name).exists()
+        # Total predicate: an unsafe/traversing name is, by definition,
+        # not a valid project (it raises UnsafePath in project_dir).
+        try:
+            return self._meta_path(name).exists()
+        except ValueError:           # UnsafePath subclasses ValueError
+            return False
 
     def get(self, name: str) -> Project:
         if not self.exists(name):

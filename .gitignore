@@ -1,0 +1,14 @@
+# Python build / cache
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtualenv / tooling
+.venv/
+.pytest_cache/
+
+# OS cruft
+.DS_Store

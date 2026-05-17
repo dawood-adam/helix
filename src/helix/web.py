@@ -63,6 +63,11 @@ def make_handler(app, token: str):
                     for b in items})
             if u.path.startswith("/gate/"):
                 proj = u.path[len("/gate/"):]
+                # Boundary guard: only operate on a real project. This
+                # rejects path-traversal names before they reach any
+                # per-project path (security review Vuln 1).
+                if not app.projects.exists(proj):
+                    return self._send(404, {"error": "no such project"})
                 try:
                     return self._send(200, app.workflow().pending(proj))
                 except Exception as e:  # noqa: BLE001
@@ -80,6 +85,11 @@ def make_handler(app, token: str):
                 proj = form.get("project", [""])[0]
                 opt = form.get("option", [""])[0]
                 why = form.get("why", [""])[0]
+                # Boundary guard: never pass an unvalidated project name
+                # into the workflow / filesystem (security review
+                # Vuln 1 — path traversal → arbitrary file write).
+                if not app.projects.exists(proj):
+                    return self._send(404, {"error": "no such project"})
                 try:
                     res = app.workflow().resume(proj, opt, why)
                     return self._send(200, res)

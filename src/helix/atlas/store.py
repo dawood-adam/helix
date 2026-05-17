@@ -9,12 +9,51 @@ queue. Readers use :meth:`AtlasStore.read_page`.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple
 
 from helix.ids import IdIndex, PageEntry
 from helix.pages import Page
+
+
+class UnsafePath(ValueError):
+    """A project name / relative path that escapes the Atlas root.
+
+    Raised fail-closed so a traversal attempt (e.g. an unsanitized
+    ``project`` from the web surface) can never reach a filesystem
+    mkdir/write outside the data root (security review Vuln 1).
+    """
+
+
+def _validate_project(project: str) -> str:
+    """Reject any project name that is not a single safe path segment.
+
+    Project names are always one directory component under
+    ``projects/``; separators, ``..``/``.``, NUL or a leading dot are
+    never legitimate and are exactly the path-traversal vectors.
+    """
+    if (not project
+            or project in (".", "..")
+            or project.startswith(".")
+            or "/" in project
+            or "\\" in project
+            or "\0" in project
+            or (os.sep in project)
+            or (os.altsep and os.altsep in project)):
+        raise UnsafePath(f"invalid project name: {project!r}")
+    return project
+
+
+def _assert_within(base: Path, target: Path) -> Path:
+    """Authoritative containment guard: ``target`` (after resolving
+    ``..`` and symlinks) must live inside ``base``."""
+    try:
+        target.resolve().relative_to(base.resolve())
+    except ValueError:
+        raise UnsafePath(f"path escapes {base}: {target}")
+    return target
 
 # type -> canonical folder once a page is no longer scratch (§6.1).
 _TYPE_FOLDER = {
@@ -82,7 +121,12 @@ class AtlasLayout:
         return self.helix_dir / "wal.jsonl"
 
     def project_dir(self, project: str) -> Path:
-        return self.root / "projects" / project
+        # The single chokepoint for every per-project path
+        # (decision log, snapshots, project meta). Validate the
+        # untrusted segment AND assert containment (fail-closed).
+        _validate_project(project)
+        return _assert_within(self.root / "projects",
+                              self.root / "projects" / project)
 
     def decision_log_json(self, project: str) -> Path:
         return self.project_dir(project) / ".decision-log.json"
@@ -128,7 +172,9 @@ class AtlasStore:
     # ---- low-level writes (WriteQueue only) --------------------------
 
     def _write_file(self, rel: str, text: str) -> None:
-        dest = self.abspath(rel)
+        # Defense in depth: a relative path must never escape the root
+        # (security review Vuln 1) before any mkdir/write happens.
+        dest = _assert_within(self.root, self.abspath(rel))
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".tmp")
         tmp.write_text(text)
@@ -137,7 +183,7 @@ class AtlasStore:
     def _move_file(self, old_rel: str, new_rel: str) -> None:
         if old_rel == new_rel:
             return
-        src = self.abspath(old_rel)
-        dest = self.abspath(new_rel)
+        src = _assert_within(self.root, self.abspath(old_rel))
+        dest = _assert_within(self.root, self.abspath(new_rel))
         dest.parent.mkdir(parents=True, exist_ok=True)
         src.replace(dest)
